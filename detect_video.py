@@ -9,6 +9,7 @@ import sys
 import time
 import datetime
 import argparse
+import cv2
 
 from PIL import Image
 
@@ -23,7 +24,8 @@ from matplotlib.ticker import NullLocator
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
+    parser.add_argument("--video_file", type=str, default="", help="path to video dataset")
+    parser.add_argument("--save_video", type=bool, default=False, help="save detect video")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
@@ -52,8 +54,23 @@ if __name__ == "__main__":
 
     model.eval()  # Set in evaluation mode
 
+    vidcap = cv2.VideoCapture(opt.video_file)
+    save_frame_path = "data\\" + opt.video_file.split(".")[0].split("/")[-1] + "_frames"
+    print(save_frame_path)
+    os.makedirs(save_frame_path, exist_ok=True)
+    success,image = vidcap.read()
+    count = 0
+    while success:
+        cv2.imwrite(save_frame_path + "/%d.jpg" % count, image)
+        print("saving %d.jpg" % count)
+        success,image = vidcap.read()
+        count += 1
+        
+    img_frame_path = save_frame_path
+    img_frame_size = 416
+    
     dataloader = DataLoader(
-        ImageFolder(opt.image_folder, img_size=opt.img_size),
+        ImageFolder(img_frame_path, img_size=img_frame_size),
         batch_size=opt.batch_size,
         shuffle=False,
         num_workers=opt.n_cpu,
@@ -62,10 +79,15 @@ if __name__ == "__main__":
     classes = load_classes(opt.class_path)  # Extracts class labels from file
 
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+    
+    # Bounding-box colors
+    cmap = plt.get_cmap("tab20b")
+    colors = [cmap(i) for i in np.linspace(0, 1, 20)]
 
-    imgs = []  # Stores image paths
+    #imgs = []  # Stores image paths
     img_detections = []  # Stores detections for each image index
-
+    img_detections_draw = []  # Stores detections label for each image index
+    
     print("\nPerforming object detection:")
     prev_time = time.time()
     for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
@@ -84,21 +106,17 @@ if __name__ == "__main__":
         print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
 
         # Save image and detections
-        imgs.extend(img_paths)
-        print(detections)
+        path = os.path.join(os.getcwd(), str(img_paths).split("'")[1])
         img_detections.extend(detections)
+        print(detections)
+    
 
-    # Bounding-box colors
-    cmap = plt.get_cmap("tab20b")
-    colors = [cmap(i) for i in np.linspace(0, 1, 20)]
-
-    print("\nSaving images:")
+    # print("\nSaving images:")
     # Iterate through images and save plot of detections
-    for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
-        
-        path = path.replace("\\", "/")  # for windows
-        print("(%d) Image: '%s'" % (img_i, path))
-        print(path)
+    # for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
+
+        #print("(%d) Image: '%s'" % (img_i, path))
+        detections = img_detections[-1]
         # Create plot
         img = np.array(Image.open(path))
         plt.figure()
@@ -138,7 +156,25 @@ if __name__ == "__main__":
         plt.axis("off")
         plt.gca().xaxis.set_major_locator(NullLocator())
         plt.gca().yaxis.set_major_locator(NullLocator())
-        filename = path.split("/")[-1].split(".")[0]
-        print(type(plt))
-        plt.savefig(f"output/{filename}.png", bbox_inches="tight", pad_inches=0.0)
+        
+        # show and save detection label image
+        plt.imshow()
+        img_detections_draw.extend(plt)
         plt.close()
+    
+    # clean all windows    
+    cv2.destroyAllWindows()
+    
+    if opt.save_video:
+        save_file_path = "./output/result_" + opt.video_file.split(".")[0].split("/")[-1] + ".mp4"
+        fps = 60
+        torchvision.io.write_video(save_file_path, img_detections_draw, fps, video_codec='libx264', options=None)
+        
+        
+        '''
+        filename = path.split("/")[-1].split(".")[0]
+        print(filename)
+        plt.savefig(f"output\{filename}.png", bbox_inches="tight", pad_inches=0.0)
+        #plt.savefig(file_path, bbox_inches="tight", pad_inches=0.0)
+        plt.close()
+        '''
