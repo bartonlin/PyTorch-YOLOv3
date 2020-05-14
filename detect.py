@@ -9,6 +9,7 @@ import sys
 import time
 import datetime
 import argparse
+import cv2
 
 from PIL import Image
 
@@ -24,6 +25,7 @@ from matplotlib.ticker import NullLocator
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
+    parser.add_argument("--video_file", type=str, default="", help="path to video dataset")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
@@ -38,7 +40,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    os.makedirs("output", exist_ok=True)
+    os.makedirs("output/" + opt.video_file.split(".")[0].split("/")[-1] , exist_ok=True)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
@@ -51,9 +53,27 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(opt.weights_path))
 
     model.eval()  # Set in evaluation mode
-
+    
+    if opt.video_file:
+        vidcap = cv2.VideoCapture(opt.video_file)
+        #data/video/test.mp4
+        save_frame_path = "./data/" + opt.video_file.split(".")[0].split("/")[-1] + "_frames"
+        print(save_frame_path)
+        os.makedirs(save_frame_path)
+        success,image = vidcap.read()
+        count = 0
+        while success:
+            cv2.imwrite(save_frame_path + "/%d.png" % count, image)
+            success,image = vidcap.read()
+            count += 1
+        img_frame_path = save_frame_path
+        img_frame_size = 416
+    else:
+        img_frame_path = opt.image_folder
+        img_frame_size = opt.img_size
+            
     dataloader = DataLoader(
-        ImageFolder(opt.image_folder, img_size=opt.img_size),
+        ImageFolder(img_frame_path, img_size=img_frame_size),
         batch_size=opt.batch_size,
         shuffle=False,
         num_workers=opt.n_cpu,
@@ -85,7 +105,6 @@ if __name__ == "__main__":
 
         # Save image and detections
         imgs.extend(img_paths)
-        print(detections)
         img_detections.extend(detections)
 
     # Bounding-box colors
@@ -95,10 +114,9 @@ if __name__ == "__main__":
     print("\nSaving images:")
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
-        
-        path = path.replace("\\", "/")  # for windows
+
         print("(%d) Image: '%s'" % (img_i, path))
-        print(path)
+        path = path.replace("\\", "/")  # for windows
         # Create plot
         img = np.array(Image.open(path))
         plt.figure()
@@ -138,7 +156,10 @@ if __name__ == "__main__":
         plt.axis("off")
         plt.gca().xaxis.set_major_locator(NullLocator())
         plt.gca().yaxis.set_major_locator(NullLocator())
+        
         filename = path.split("/")[-1].split(".")[0]
-        print(type(plt))
-        plt.savefig(f"output/{filename}.png", bbox_inches="tight", pad_inches=0.0)
+        print(filename)
+        plt.savefig(f"output\{filename}.png", bbox_inches="tight", pad_inches=0.0)
+        #plt.savefig(file_path, bbox_inches="tight", pad_inches=0.0)
         plt.close()
+
